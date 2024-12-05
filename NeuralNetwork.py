@@ -1,194 +1,187 @@
-import math
-import random
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
-num_inputs = 10
-num_hidden_layers = 3
-hidden_layer_width = 12
-num_outputs = 4
-neuron_scale = 5
-axon_scale = 4
-learning_rate = 0.1
-
-training_data_size = 100
+# Activation functions and derivatives
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
 
 
-def sigmoid(total):
-    e = math.exp(total)
-    return e / (1 + e)
+def sigmoid_derivative(x):
+    return x * (1 - x)
 
 
-class Neuron:
-    def __init__(self, x, y, input_idx=-1, bias=0.0):
-        self.x = x
-        self.y = y
-        self.inputs = []
-        self.outputs = []
-        self.index = input_idx
-        self.bias = bias
-        self.result = 0.0
-        self.error = 0.0
-        #self.f_prop_done = False
-        self.b_prop_done = False
+def tanh(x):
+    return np.tanh(x)
 
-    def connect_input(self, in_n):
-        in_axon = Axon(in_n, self)
-        self.inputs.append(in_axon)
 
-    def connect_output(self, out_n):
-        out_axon = Axon(self, out_n)
-        self.outputs.append(out_axon)
+def tanh_derivative(x):
+    return 1 - x ** 2
 
-    def forward_prop(self, inputs):
-        if self.result != 0.0:
-            return self.result
-        total = 0.0
-        if self.index >= 0:
-            total = inputs[self.index]
-            #print(f'Input neuron {self.index} found value {inputs[self.index]}')
-        else:
-            for in_axon in self.inputs:
-                in_n = in_axon.input
-                in_n.forward_prop(inputs)
-                in_val = in_n.result * in_axon.weight
-                #print(f'Adding weighted value {in_val} from input')
-                total += in_val
-            #print(f'Neuron computed sum {total} from inputs')
-        total += self.bias
-        #print(f'Biased total is {total}')
-        self.result = sigmoid(total)
-        #print(f'Final neuron output is {self.result}')
-        #print()
 
-    def back_prop(self):
-        for out_axon in self.outputs:
-            out_n = out_axon.output
-            out_n.back_prop()
-        if self.b_prop_done:
+def relu(x):
+    return np.maximum(0, 0)
+
+
+def relu_derivative(x):
+    return np.where(x > 0, 1, 0)
+
+
+class NeuralNetwork:
+    def __init__(self, input_size, hidden_layers, output_size, activation):
+        self.input_size = input_size
+        self.hidden_layers = hidden_layers
+        self.output_size = output_size
+        self.activation = activation
+        self.weights = []
+        self.biases = []
+        self.a = []
+        self.activations = {
+            "sigmoid": (sigmoid, sigmoid_derivative),
+            "tanh": (tanh, tanh_derivative),
+            "relu": (relu, relu_derivative),
+        }
+        self.init_weights()
+
+    def init_weights(self):
+        layers = [self.input_size] + self.hidden_layers + [self.output_size]
+        for i in range(len(layers) - 1):
+            self.weights.append(np.random.randn(layers[i], layers[i + 1]) * 0.1)
+            self.biases.append(np.zeros((1, layers[i + 1])))
+            self.a.append(np.zeros(layers[i]))
+        self.a.append(np.zeros(layers[-1]))
+
+    def forward(self, x):
+        self.a[0] = x
+        activation_func = self.activations[self.activation][0]
+        for i in range(len(self.weights)):
+            z = np.dot(self.a[i], self.weights[i]) + self.biases[i]
+            self.a[i + 1] = activation_func(z)
+        return self.a[-1]
+
+    def backward(self, x, y, learning_rate):
+        m = x.shape[0]
+        derivative_func = self.activations[self.activation][1]
+        delta = self.a[-1] - y
+
+        for i in range(len(self.weights) - 1, -1, -1):
+            dW = np.dot(self.a[i].T, delta) / m
+            db = np.sum(delta, axis=0, keepdims=True) / m
+            self.weights[i] -= learning_rate * dW
+            self.biases[i] -= learning_rate * db
+
+            if i > 0:
+                delta = np.dot(delta, self.weights[i].T) * derivative_func(self.a[i])
+
+    def train(self, x, y, epochs, learning_rate, text_widget):
+        self.losses = []
+        for epoch in range(epochs):
+            output = self.forward(x)
+            loss = np.mean((output - y) ** 2)
+            self.losses.append(loss)
+            self.backward(x, y, learning_rate)
+
+            if epoch % 10 == 0 or epoch == epochs - 1:
+                text_widget.insert(
+                    tk.END, f"Epoch {epoch + 1}/{epochs}, Loss: {loss:.6f}\n"
+                )
+                text_widget.see(tk.END)
+                text_widget.update()
+
+    def test(self, x, y):
+        predictions = self.forward(x)
+        predictions = (predictions > 0.5).astype(int)
+        accuracy = np.mean(predictions == y)
+        return accuracy
+
+
+def load_dataset(file_path):
+    try:
+        data = pd.read_csv(file_path)
+        X = data.drop("Class", axis=1).values
+        y = (data["Class"] == "Besni").astype(int).values.reshape(-1, 1)
+        return X, y
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to load dataset: {e}")
+        return None, None
+
+
+def start_training():
+    try:
+        input_size = int(input_nodes_entry.get())
+        hidden_layers = list(map(int, hidden_nodes_entry.get().split(",")))
+        output_size = int(output_nodes_entry.get())
+        activation = activation_var.get()
+        learning_rate = float(learning_rate_entry.get())
+        epochs = int(epochs_entry.get())
+
+        # Load dataset
+        file_path = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
+        if not file_path:
             return
-        gradient = self.result * (1.0 - self.result)
-        delta = self.error * gradient
-        # print(f'Error calc: {self.error} {gradient} {delta}')
-        if self.index == -1:
-            for in_axon in self.inputs:
-                in_n = in_axon.input
-                in_n.error += in_n.error * in_axon.weight
-                in_axon.weight -= delta * in_n.result * learning_rate
-        self.bias -= delta * learning_rate
-        self.b_prop_done = True
 
-    def draw(self, canvas, color='black'):
-        canvas.create_oval(self.x - neuron_scale, self.y - neuron_scale, self.x + neuron_scale, self.y + neuron_scale, fill=color)
+        X, y = load_dataset(file_path)
+        if X is None or y is None:
+            return
 
+        # Normalize data
+        scaler = StandardScaler()
+        X = scaler.fit_transform(X)
 
-class Axon:
-    def __init__(self, in_n, out_n, weight=0.0):
-        self.input = in_n
-        self.output = out_n
-        self.weight = weight
+        # Split data
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    def draw(self, canvas, color='grey'):
-        canvas.create_line(self.input.x,
-                           self.input.y,
-                           self.output.x,
-                           self.output.y,
-                           fill=color,
-                           width=axon_scale)
+        # Initialize and train the neural network
+        global nn
+        nn = NeuralNetwork(input_size, hidden_layers, output_size, activation)
+        result_text.insert(tk.END, "Training started...\n")
+        nn.train(X_train, y_train, epochs, learning_rate, result_text)
 
+        # Test accuracy
+        accuracy = nn.test(X_test, y_test)
+        result_text.insert(tk.END, f"Training complete! Test Accuracy: {accuracy:.2f}\n")
+        result_text.see(tk.END)
 
-class Network:
-    def __init__(self):
-        self.inputs = []
-        self.hidden_layers = []
-        self.outputs = []
-        for idx in range(num_inputs):
-            in_n = Neuron(0, 0, idx, 1.0)
-            self.inputs.append(in_n)
-        for layer in range(num_hidden_layers):
-            self.hidden_layers.append([])
-            for _ in range(hidden_layer_width):
-                hidden_n = Neuron(0, 0)
-                self.hidden_layers[layer].append(hidden_n)
-                if layer == 0:
-                    for in_n in self.inputs:
-                        hidden_n.connect_input(in_n)
-                        in_n.connect_output(hidden_n)
-                else:
-                    for h_n in self.hidden_layers[layer-1]:
-                        hidden_n.connect_input(h_n)
-                        h_n.connect_output(hidden_n)
-        for _ in range(num_outputs):
-            out_n = Neuron(0, 0)
-            self.outputs.append(out_n)
-            for h_n in self.hidden_layers[num_hidden_layers-1]:
-                out_n.connect_input(h_n)
-                h_n.connect_output(out_n)
-
-    # Used in both train() and test() to get output from the current network
-    def forward_prop(self, inputs):
-        print(f'Performing forward propagation')
-        for in_n in self.inputs:
-            in_n.result = 0.0
-        for h_layer in self.hidden_layers:
-            for h_n in h_layer:
-                h_n.result = 0.0
-        for out_n in self.outputs:
-            out_n.result = 0.0
-            out_n.forward_prop(inputs)
-
-    # Used with train() to modify weights and biases to reduce error
-    def back_prop(self):
-        print(f'Performing backward propagation')
-        for h_layer in self.hidden_layers:
-            for h_n in h_layer:
-                h_n.error = 0.0
-                h_n.b_prop_done = False
-        for out_n in self.outputs:
-            out_n.error = 0.0
-            out_n.b_prop_done = False
-        for in_n in self.inputs:
-            in_n.error = 0.0
-            in_n.b_prop_done = False
-            in_n.back_prop()
-
-    # Given a datum, produce an output and compare against the target, then perform backprop to reduce error
-    # returns: nothing
-    def train(self, data):
-        self.forward_prop(data.inputs)
-        for x in range(num_outputs):
-            self.outputs[x].error = data.outputs[x] - self.outputs[x].result
-            print(f'Output {x} error is {self.outputs[x].error}')
-        self.back_prop()
-
-    # Given a datum, produce an output
-    # returns: the network output/selection/prediction
-    def test(self, data):
-        self.forward_prop(data.inputs)
-        out_max = 0.0
-        for out_n in self.outputs:
-            out_max = max(out_max, out_n.result)
-        return out_max
+    except ValueError as e:
+        messagebox.showerror("Input Error", f"Invalid input: {e}")
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred: {e}")
 
 
-class RandData:
-    def __init__(self):
-        self.inputs = []
-        self.outputs = []
+# GUI Setup
+root = tk.Tk()
+root.title("Neural Network Trainer")
 
-    def generate(self):
-        for _ in range(num_inputs):
-            self.inputs.append(random.random()*10.0-5.0)
-        for _ in range(num_outputs):
-            self.outputs.append(random.random())
+tk.Label(root, text="Input Nodes:").grid(row=0, column=0, padx=5, pady=5)
+input_nodes_entry = tk.Entry(root)
+input_nodes_entry.grid(row=0, column=1, padx=5, pady=5)
 
+tk.Label(root, text="Hidden Layers (comma-separated):").grid(row=1, column=0, padx=5, pady=5)
+hidden_nodes_entry = tk.Entry(root)
+hidden_nodes_entry.grid(row=1, column=1, padx=5, pady=5)
 
-def train():
-    global training_data_size
-    network = Network()
-    for _ in range(training_data_size):
-        dat = RandData()
-        dat.generate()
-        network.train(dat)
+tk.Label(root, text="Output Nodes:").grid(row=2, column=0, padx=5, pady=5)
+output_nodes_entry = tk.Entry(root)
+output_nodes_entry.grid(row=2, column=1, padx=5, pady=5)
 
+tk.Label(root, text="Activation Function:").grid(row=3, column=0, padx=5, pady=5)
+activation_var = tk.StringVar(value="sigmoid")
+tk.OptionMenu(root, activation_var, "sigmoid", "tanh", "relu").grid(row=3, column=1, padx=5, pady=5)
 
-if __name__ == '__main__':
-    train()
+tk.Label(root, text="Learning Rate:").grid(row=4, column=0, padx=5, pady=5)
+learning_rate_entry = tk.Entry(root)
+learning_rate_entry.grid(row=4, column=1, padx=5, pady=5)
+
+tk.Label(root, text="Epochs:").grid(row=5, column=0, padx=5, pady=5)
+epochs_entry = tk.Entry(root)
+epochs_entry.grid(row=5, column=1, padx=5, pady=5)
+
+tk.Button(root, text="Start Training", command=start_training).grid(row=6, column=0, columnspan=2, pady=10)
+
+result_text = scrolledtext.ScrolledText(root, width=60, height=20)
+result_text.grid(row=7, column=0, columnspan=2, padx=10, pady=10)
+
+root.mainloop()
