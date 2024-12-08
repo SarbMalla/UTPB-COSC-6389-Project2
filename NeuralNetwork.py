@@ -9,26 +9,20 @@ from sklearn.preprocessing import StandardScaler
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
-
 def sigmoid_derivative(x):
     return x * (1 - x)
-
 
 def tanh(x):
     return np.tanh(x)
 
-
 def tanh_derivative(x):
     return 1 - x ** 2
 
-
 def relu(x):
-    return np.maximum(0, 0)
-
+    return np.maximum(0, x)
 
 def relu_derivative(x):
     return np.where(x > 0, 1, 0)
-
 
 class NeuralNetwork:
     def __init__(self, input_size, hidden_layers, output_size, activation):
@@ -76,7 +70,7 @@ class NeuralNetwork:
             if i > 0:
                 delta = np.dot(delta, self.weights[i].T) * derivative_func(self.a[i])
 
-    def train(self, x, y, epochs, learning_rate, text_widget):
+    def train(self, x, y, epochs, learning_rate, text_widget, canvas):
         self.losses = []
         for epoch in range(epochs):
             output = self.forward(x)
@@ -85,11 +79,10 @@ class NeuralNetwork:
             self.backward(x, y, learning_rate)
 
             if epoch % 10 == 0 or epoch == epochs - 1:
-                text_widget.insert(
-                    tk.END, f"Epoch {epoch + 1}/{epochs}, Loss: {loss:.6f}\n"
-                )
+                text_widget.insert(tk.END, f"Epoch {epoch + 1}/{epochs}, Loss: {loss:.6f}\n")
                 text_widget.see(tk.END)
                 text_widget.update()
+                draw_network(canvas, self)
 
     def test(self, x, y):
         predictions = self.forward(x)
@@ -97,6 +90,30 @@ class NeuralNetwork:
         accuracy = np.mean(predictions == y)
         return accuracy
 
+def draw_network(canvas, nn):
+    canvas.delete("all")  
+    layers = [nn.input_size] + nn.hidden_layers + [nn.output_size]
+    max_nodes = max(layers)
+    x_spacing = 400 // len(layers)
+    y_spacing = 600 // max_nodes
+
+    positions = []
+
+    for layer_index, size in enumerate(layers):
+        positions.append([])
+        x = layer_index * x_spacing + 50
+        for node_index in range(size):
+            y = node_index * y_spacing + (y_spacing // 2)
+            canvas.create_oval(x - 10, y - 10, x + 10, y + 10, fill="blue")
+            positions[-1].append((x, y))
+
+    for layer_index, layer_positions in enumerate(positions[:-1]):
+        for i, (x1, y1) in enumerate(layer_positions):
+            for j, (x2, y2) in enumerate(positions[layer_index + 1]):
+                weight = nn.weights[layer_index][i, j]
+                color = "red" if weight < 0 else "green"
+                width = min(5, abs(weight) * 10)
+                canvas.create_line(x1, y1, x2, y2, fill=color, width=width)
 
 def load_dataset(file_path):
     try:
@@ -108,7 +125,6 @@ def load_dataset(file_path):
         messagebox.showerror("Error", f"Failed to load dataset: {e}")
         return None, None
 
-
 def start_training():
     try:
         input_size = int(input_nodes_entry.get())
@@ -118,7 +134,6 @@ def start_training():
         learning_rate = float(learning_rate_entry.get())
         epochs = int(epochs_entry.get())
 
-        # Load dataset
         file_path = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
         if not file_path:
             return
@@ -127,20 +142,18 @@ def start_training():
         if X is None or y is None:
             return
 
-        # Normalize data
         scaler = StandardScaler()
         X = scaler.fit_transform(X)
 
-        # Split data
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # Initialize and train the neural network
         global nn
         nn = NeuralNetwork(input_size, hidden_layers, output_size, activation)
-        result_text.insert(tk.END, "Training started...\n")
-        nn.train(X_train, y_train, epochs, learning_rate, result_text)
+        draw_network(canvas, nn)
 
-        # Test accuracy
+        result_text.insert(tk.END, "Training started...\n")
+        nn.train(X_train, y_train, epochs, learning_rate, result_text, canvas)
+
         accuracy = nn.test(X_test, y_test)
         result_text.insert(tk.END, f"Training complete! Test Accuracy: {accuracy:.2f}\n")
         result_text.see(tk.END)
@@ -150,38 +163,45 @@ def start_training():
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
 
-
-# GUI Setup
 root = tk.Tk()
-root.title("Neural Network Trainer")
+root.title("Neural Network Trainer and Visualizer")
 
-tk.Label(root, text="Input Nodes:").grid(row=0, column=0, padx=5, pady=5)
-input_nodes_entry = tk.Entry(root)
+frame_left = tk.Frame(root)
+frame_left.pack(side=tk.LEFT, padx=10, pady=10)
+
+frame_right = tk.Frame(root)
+frame_right.pack(side=tk.RIGHT, padx=10, pady=10)
+
+tk.Label(frame_left, text="Input Nodes:").grid(row=0, column=0, padx=5, pady=5)
+input_nodes_entry = tk.Entry(frame_left)
 input_nodes_entry.grid(row=0, column=1, padx=5, pady=5)
 
-tk.Label(root, text="Hidden Layers (comma-separated):").grid(row=1, column=0, padx=5, pady=5)
-hidden_nodes_entry = tk.Entry(root)
+tk.Label(frame_left, text="Hidden Layers (comma-separated):").grid(row=1, column=0, padx=5, pady=5)
+hidden_nodes_entry = tk.Entry(frame_left)
 hidden_nodes_entry.grid(row=1, column=1, padx=5, pady=5)
 
-tk.Label(root, text="Output Nodes:").grid(row=2, column=0, padx=5, pady=5)
-output_nodes_entry = tk.Entry(root)
+tk.Label(frame_left, text="Output Nodes:").grid(row=2, column=0, padx=5, pady=5)
+output_nodes_entry = tk.Entry(frame_left)
 output_nodes_entry.grid(row=2, column=1, padx=5, pady=5)
 
-tk.Label(root, text="Activation Function:").grid(row=3, column=0, padx=5, pady=5)
+tk.Label(frame_left, text="Activation Function:").grid(row=3, column=0, padx=5, pady=5)
 activation_var = tk.StringVar(value="sigmoid")
-tk.OptionMenu(root, activation_var, "sigmoid", "tanh", "relu").grid(row=3, column=1, padx=5, pady=5)
+tk.OptionMenu(frame_left, activation_var, "sigmoid", "tanh", "relu").grid(row=3, column=1, padx=5, pady=5)
 
-tk.Label(root, text="Learning Rate:").grid(row=4, column=0, padx=5, pady=5)
-learning_rate_entry = tk.Entry(root)
+tk.Label(frame_left, text="Learning Rate:").grid(row=4, column=0, padx=5, pady=5)
+learning_rate_entry = tk.Entry(frame_left)
 learning_rate_entry.grid(row=4, column=1, padx=5, pady=5)
 
-tk.Label(root, text="Epochs:").grid(row=5, column=0, padx=5, pady=5)
-epochs_entry = tk.Entry(root)
+tk.Label(frame_left, text="Epochs:").grid(row=5, column=0, padx=5, pady=5)
+epochs_entry = tk.Entry(frame_left)
 epochs_entry.grid(row=5, column=1, padx=5, pady=5)
 
-tk.Button(root, text="Start Training", command=start_training).grid(row=6, column=0, columnspan=2, pady=10)
+tk.Button(frame_left, text="Start Training", command=start_training).grid(row=6, column=0, columnspan=2, pady=10)
 
-result_text = scrolledtext.ScrolledText(root, width=60, height=20)
+result_text = scrolledtext.ScrolledText(frame_left, width=40, height=15)
 result_text.grid(row=7, column=0, columnspan=2, padx=10, pady=10)
+
+canvas = tk.Canvas(frame_right, width=400, height=600, bg="white")
+canvas.pack(padx=10, pady=10)
 
 root.mainloop()
